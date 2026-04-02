@@ -68,6 +68,13 @@ class MemoryMiddleware(AgentMiddleware):
 
         parts = []
 
+        # If a name preference is stored in memory, prepend it as a hard directive
+        # so it takes priority over the default title in the system prompt.
+        name = _extract_name_preference(global_mem)
+        if name:
+            parts.append(f"Your name for this session is: **{name}**. "
+                         f"Use this name whenever you introduce yourself.")
+
         memory_content = ""
         if global_mem:
             memory_content += f"{GLOBAL_MEMORY_FILE}\n{global_mem}\n"
@@ -85,6 +92,23 @@ class MemoryMiddleware(AgentMiddleware):
         ))
 
         return append_to_system(system, "\n\n".join(parts))
+
+
+def _extract_name_preference(memory: str) -> str | None:
+    """Scan memory content for a stored name preference and return it, or None."""
+    import re
+    patterns = [
+        r"preferred_name[：:]\s*(.+)",
+        r"名字偏好[：:]\s*(.+)",
+        r"name preference[：:]\s*(.+)",
+    ]
+    for line in memory.splitlines():
+        line = line.strip().lstrip("-• ")
+        for pattern in patterns:
+            m = re.search(pattern, line, re.IGNORECASE)
+            if m:
+                return m.group(1).strip()
+    return None
 
 
 def _read_file(path: Path) -> str:
