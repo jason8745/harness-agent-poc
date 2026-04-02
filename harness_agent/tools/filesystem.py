@@ -1,10 +1,9 @@
-"""Filesystem tools for the agent: ls, read_file, glob, grep, write_file."""
+"""Filesystem tools for the agent: ls, read_file, glob, grep, write_file, edit_file."""
 
 from __future__ import annotations
 
 import fnmatch
 import re
-import subprocess
 from pathlib import Path
 
 from langchain_core.tools import tool
@@ -24,6 +23,12 @@ class ReadFileInput(BaseModel):
 class WriteFileInput(BaseModel):
     file_path: str = Field(description="Absolute path to write")
     content: str = Field(description="Full content to write")
+
+
+class EditFileInput(BaseModel):
+    file_path: str = Field(description="Absolute path to the file")
+    old_string: str = Field(description="Exact string to find and replace (must be unique in file)")
+    new_string: str = Field(description="Replacement string")
 
 
 class LsInput(BaseModel):
@@ -167,8 +172,34 @@ def write_file(file_path: str, content: str) -> str:
         return f"Error writing file: {e}"
 
 
-# Exported list for use in the agent
-FILESYSTEM_TOOLS = [ls, read_file, glob, grep, write_file]
+@tool(args_schema=EditFileInput)
+def edit_file(file_path: str, old_string: str, new_string: str) -> str:
+    """Perform an exact string replacement in a file.
 
-# Tools that require HITL approval
+    Use this for targeted updates — memory files, appending sections, small edits.
+    old_string must appear exactly once in the file.
+    """
+    path = Path(file_path)
+    if not path.exists():
+        return f"Error: file_not_found: {file_path}"
+
+    try:
+        content = path.read_text(encoding="utf-8")
+    except Exception as e:
+        return f"Error reading file: {e}"
+
+    count = content.count(old_string)
+    if count == 0:
+        return "Error: old_string not found in file"
+    if count > 1:
+        return f"Error: old_string found {count} times — must be unique. Add more surrounding context."
+
+    path.write_text(content.replace(old_string, new_string, 1), encoding="utf-8")
+    return f"Successfully edited {file_path}"
+
+
+# Exported list for use in the agent
+FILESYSTEM_TOOLS = [ls, read_file, glob, grep, write_file, edit_file]
+
+# write_file (full overwrite) requires HITL; edit_file (targeted) does not
 HIGH_RISK_TOOLS = {"write_file"}

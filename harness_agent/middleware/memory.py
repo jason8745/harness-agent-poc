@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -14,18 +15,30 @@ GLOBAL_MEMORY_FILE = MEMORY_DIR / "AGENTS.md"
 REPO_MEMORY_DIR = MEMORY_DIR / "repos"
 
 _MEMORY_GUIDELINES = """<memory_guidelines>
-When the user provides information useful for future analyses, update memory IMMEDIATELY
-by calling write_file before doing anything else.
+## When to update memory
 
-Update memory when:
-- User states a preference about how analyses should be written
-- User provides project-specific context you should remember
-- You discover a recurring pattern worth noting
+**During conversation** — if the user gives feedback or states a preference,
+call `edit_file` to update memory BEFORE doing anything else.
 
-After completing an analysis, append a brief summary to the repo memory file at:
-{repo_memory_path}
+Update when:
+✓ User states how analyses should be written
+✓ User corrects your approach or gives feedback
+✓ You discover a pattern that should persist across sessions
 
-NEVER store API keys, passwords, or credentials.
+Do NOT update for: one-time requests, temporary context, small talk.
+NEVER store API keys or credentials.
+
+## After completing an analysis
+
+Once all reports are written, you MUST call `edit_file` to append a summary
+to the repo memory file:
+
+  file_path: {repo_memory_path}
+  old_string: "## Previous Analyses\n"
+  new_string: "## Previous Analyses\n\n### {date}\n{summary}\n"
+
+Keep the summary to 3-5 bullet points covering: tech stack, key patterns found,
+and anything notable for future reference.
 </memory_guidelines>"""
 
 
@@ -65,7 +78,11 @@ class MemoryMiddleware(AgentMiddleware):
             parts.append(f"<agent_memory>\n{memory_content.strip()}\n</agent_memory>")
 
         repo_memory_path = REPO_MEMORY_DIR / f"{self.repo_name}.md" if self.repo_name else ""
-        parts.append(_MEMORY_GUIDELINES.format(repo_memory_path=repo_memory_path))
+        parts.append(_MEMORY_GUIDELINES.format(
+            repo_memory_path=repo_memory_path,
+            date=date.today().isoformat(),
+            summary="- {bullet 1}\n- {bullet 2}\n- {bullet 3}",
+        ))
 
         return append_to_system(system, "\n\n".join(parts))
 
