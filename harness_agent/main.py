@@ -127,20 +127,29 @@ def analyze(repo_name: str, model: str | None) -> None:
 
 def _find_repos(name: str) -> list[Path]:
     """Search common locations for a directory matching the given repo name."""
+    seen: set[Path] = set()
     found: list[Path] = []
     name_lower = name.lower()
 
     for root in SEARCH_ROOTS:
         if not root.exists():
             continue
-        # Search up to depth 3 to avoid being too slow
         for candidate in root.rglob("*"):
-            if candidate.is_dir() and candidate.name.lower() == name_lower:
-                # Skip hidden dirs and .git internals
-                if any(part.startswith(".") for part in candidate.parts[-3:]):
-                    continue
-                found.append(candidate)
-                break  # take first match per root
+            if not candidate.is_dir():
+                continue
+            if candidate.name.lower() != name_lower:
+                continue
+            # Skip hidden dirs and .git internals
+            if any(part.startswith(".") for part in candidate.parts[-3:]):
+                continue
+            # Deduplicate by resolved absolute path
+            resolved = candidate.resolve()
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            found.append(candidate)
+            break  # one match per root is enough
+
         if len(found) >= 5:
             break
 
