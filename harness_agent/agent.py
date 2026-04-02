@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Annotated, Any, TypedDict
 
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage, ToolMessage
+from openai import BadRequestError
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
@@ -71,9 +72,19 @@ def build_graph(llm: Any, repo_name: str) -> Any:
         messages = compact_mw.maybe_compact(state["messages"])
         system = memory_mw.inject_system(system_prompt, state)
 
-        response = model_with_tools.invoke(
-            [SystemMessage(content=system)] + messages
-        )
+        try:
+            response = model_with_tools.invoke(
+                [SystemMessage(content=system)] + messages
+            )
+        except BadRequestError as e:
+            # Azure content filter or other 400 errors — surface gracefully
+            # instead of crashing the whole process
+            error_detail = _extract_content_filter_reason(e)
+            response = AIMessage(
+                content=f"⚠️ Request blocked by the LLM provider: {error_detail}\n"
+                        f"Try rephrasing your last message or starting a new session."
+            )
+
         updates["messages"] = [response]
         return updates
 
@@ -142,3 +153,19 @@ def _load_system_prompt(repo_name: str) -> str:
     prompt_file = Path(__file__).parent / "prompts" / "system.md"
     text = prompt_file.read_text(encoding="utf-8")
     return text.replace("{repo_name}", repo_name)
+
+
+def _extract_content_filter_reason(e: BadRequestError) -> str:
+    """Pull a human-readable reason out of an Azure content filter error."""
+    try:
+        body = e.response.json()
+        inner = body["error"].get("innererror", {})
+        result = inner.get("content_filter_result", {})
+        triggered = [
+            f"{category}({info['severity']})"
+            for category, info in result.items()
+            if info.get("filtered")
+        ]
+        return f"content filter triggered — {', '.join(triggered)}" if triggered else str(e)
+    except Exception:
+        return str(e)
