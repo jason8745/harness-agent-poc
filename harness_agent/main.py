@@ -34,6 +34,13 @@ DIMENSIONS: dict[str, tuple[str, str, str]] = {
     "3": ("03_takeaways.md",    "Takeaways",    "Nice patterns, clever decisions, lessons learned"),
 }
 
+# Paths inside this project that should never be treated as external repos
+_PROJECT_ROOT = Path(__file__).parent.parent
+_EXCLUDED_ROOTS = {
+    (_PROJECT_ROOT / "reports").resolve(),
+    (_PROJECT_ROOT / "memory").resolve(),
+}
+
 
 # --------------------------------------------------------------------------- #
 # CLI commands                                                                 #
@@ -297,6 +304,12 @@ def _find_repos(name: str) -> list[Path]:
                 continue
             resolved = candidate.resolve()
             if resolved in seen:
+                continue
+            # Skip paths inside this project's reports/ or memory/
+            if any(resolved.is_relative_to(ex) for ex in _EXCLUDED_ROOTS):
+                continue
+            # Skip if this path is nested inside an already-found repo
+            if any(resolved.is_relative_to(r.resolve()) for r in found):
                 continue
             seen.add(resolved)
             found.append(candidate)
