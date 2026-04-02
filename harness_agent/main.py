@@ -16,7 +16,7 @@ from .middleware.memory import MEMORY_DIR, ensure_memory_files
 
 console = Console()
 
-PROVIDERS = ["claude", "openai", "gemini"]
+PROVIDERS = ["claude", "openai", "azure", "gemini"]
 
 
 @click.group()
