@@ -52,7 +52,7 @@ def chat(repo_name: str, model: str | None) -> None:
     """Start an interactive chat session about a repository.
 
     REPO_NAME is the directory name of the repository to load.
-    Ask anything — architecture questions, code explanations, or request a full analysis.
+    If previous analysis reports exist, they are loaded as context automatically.
     Type 'exit' or press Ctrl+C to quit.
     """
     repo, llm, app, config = _setup_session(repo_name, model)
@@ -66,14 +66,34 @@ def chat(repo_name: str, model: str | None) -> None:
     console.print(f"[dim]Repo mem: {REPO_MEMORY_DIR}/{repo.name}.md[/dim]")
     console.print("[dim]Type 'exit' to quit.[/dim]\n")
 
-    # Prime the agent with the repo path so it knows where to look
-    initial_state = _make_initial_state(
-        f"I'm loading the repository at: {repo}\n"
-        f"Repo name: '{repo.name}'. "
-        f"I'll answer questions and help explore this codebase. "
-        f"What would you like to know?"
-    )
-    _repl(app, initial_state, config, repo_name=repo.name)
+    existing = _load_existing_reports(repo.name)
+
+    if existing:
+        # Show which reports are loaded
+        console.print("[dim]Loaded existing reports:[/dim]")
+        for name in existing:
+            console.print(f"[dim]  reports/{repo.name}/{name}[/dim]")
+        console.print()
+
+        reports_block = "\n\n".join(
+            f"### {name}\n{content}" for name, content in existing.items()
+        )
+        first_message = (
+            f"Repository: {repo} (name: '{repo.name}')\n\n"
+            f"I have loaded the following existing analysis reports as context:\n\n"
+            f"{reports_block}\n\n"
+            f"Use these reports to answer questions. "
+            f"Only explore the filesystem if the question goes beyond what the reports cover. "
+            f"If asked to re-analyse, do a fresh analysis and overwrite the reports."
+        )
+    else:
+        first_message = (
+            f"Repository: {repo} (name: '{repo.name}')\n\n"
+            f"No previous analysis reports found. "
+            f"I'm ready to answer questions or run an analysis — what would you like?"
+        )
+
+    _repl(app, _make_initial_state(first_message), config, repo_name=repo.name)
 
 
 @cli.command()
@@ -89,6 +109,22 @@ def analyze(repo_name: str, model: str | None) -> None:
     repo, llm, app, config = _setup_session(repo_name, model)
     if repo is None:
         return
+
+    # Warn if reports already exist
+    existing = _load_existing_reports(repo.name)
+    if existing:
+        console.print("[yellow]Existing reports found:[/yellow]")
+        for name in existing:
+            console.print(f"[dim]  reports/{repo.name}/{name}[/dim]")
+        console.print()
+        confirm = console.input(
+            "Re-analyse and overwrite? ([green]y[/green]es / [red]n[/red]o, open chat instead): "
+        ).strip().lower()
+        if confirm not in ("y", "yes"):
+            console.print("[dim]Opening chat with existing reports instead.[/dim]")
+            # Delegate to chat flow
+            _chat_with_reports(repo, existing, app, config)
+            return
 
     # Dimension selection
     selected = _select_dimensions()
@@ -116,6 +152,40 @@ def analyze(repo_name: str, model: str | None) -> None:
         f"Ask me if anything is ambiguous."
     )
     _repl(app, initial_state, config, repo_name=repo.name)
+
+
+# --------------------------------------------------------------------------- #
+# Report helpers                                                               #
+# --------------------------------------------------------------------------- #
+
+def _load_existing_reports(repo_name: str) -> dict[str, str]:
+    """Return a dict of {filename: content} for any existing reports."""
+    reports_dir = Path(__file__).parent.parent / "reports" / repo_name
+    if not reports_dir.exists():
+        return {}
+    result = {}
+    for f in sorted(reports_dir.glob("*.md")):
+        result[f.name] = f.read_text(encoding="utf-8")
+    return result
+
+
+def _chat_with_reports(repo: Path, existing: dict[str, str], app: any, config: dict) -> None:
+    """Start a chat session pre-loaded with existing report content."""
+    console.print(f"\n[bold green]Harness Agent[/bold green] — chatting about "
+                  f"[cyan]{repo.name}[/cyan]")
+    console.print("[dim]Type 'exit' to quit.[/dim]\n")
+
+    reports_block = "\n\n".join(
+        f"### {name}\n{content}" for name, content in existing.items()
+    )
+    first_message = (
+        f"Repository: {repo} (name: '{repo.name}')\n\n"
+        f"I have loaded the following existing analysis reports as context:\n\n"
+        f"{reports_block}\n\n"
+        f"Use these reports to answer questions. "
+        f"Only explore the filesystem if the question goes beyond what the reports cover."
+    )
+    _repl(app, _make_initial_state(first_message), config, repo_name=repo.name)
 
 
 # --------------------------------------------------------------------------- #
