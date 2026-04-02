@@ -7,9 +7,11 @@ from typing import Any
 
 from .base import AgentMiddleware, append_to_system
 
-MEMORY_DIR = Path.home() / ".harness-agent"
+# Memory lives inside the project root for easy observation
+_PROJECT_ROOT = Path(__file__).parent.parent.parent
+MEMORY_DIR = _PROJECT_ROOT / "memory"
 GLOBAL_MEMORY_FILE = MEMORY_DIR / "AGENTS.md"
-REPO_MEMORY_DIR = MEMORY_DIR / "memory"
+REPO_MEMORY_DIR = MEMORY_DIR / "repos"
 
 _MEMORY_GUIDELINES = """<memory_guidelines>
 When the user provides information useful for future analyses, update memory IMMEDIATELY
@@ -19,6 +21,9 @@ Update memory when:
 - User states a preference about how analyses should be written
 - User provides project-specific context you should remember
 - You discover a recurring pattern worth noting
+
+After completing an analysis, append a brief summary to the repo memory file at:
+{repo_memory_path}
 
 NEVER store API keys, passwords, or credentials.
 </memory_guidelines>"""
@@ -45,10 +50,10 @@ class MemoryMiddleware(AgentMiddleware):
         }
 
     def inject_system(self, system: str, state: dict[str, Any]) -> str:
-        parts = []
-
         global_mem = state.get("global_memory", "")
         repo_mem = state.get("repo_memory", "")
+
+        parts = []
 
         memory_content = ""
         if global_mem:
@@ -59,7 +64,8 @@ class MemoryMiddleware(AgentMiddleware):
         if memory_content:
             parts.append(f"<agent_memory>\n{memory_content.strip()}\n</agent_memory>")
 
-        parts.append(_MEMORY_GUIDELINES)
+        repo_memory_path = REPO_MEMORY_DIR / f"{self.repo_name}.md" if self.repo_name else ""
+        parts.append(_MEMORY_GUIDELINES.format(repo_memory_path=repo_memory_path))
 
         return append_to_system(system, "\n\n".join(parts))
 
@@ -72,7 +78,7 @@ def _read_file(path: Path) -> str:
 
 
 def ensure_memory_files(repo_name: str) -> None:
-    """Create memory directory and stub files if they don't exist."""
+    """Create memory directory structure and stub files if they don't exist."""
     MEMORY_DIR.mkdir(parents=True, exist_ok=True)
     REPO_MEMORY_DIR.mkdir(parents=True, exist_ok=True)
 

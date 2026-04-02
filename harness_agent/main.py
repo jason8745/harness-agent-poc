@@ -13,7 +13,7 @@ from rich.table import Table
 
 from .agent import build_graph
 from .llm.providers import create_llm, ensure_config_exists
-from .middleware.memory import MEMORY_DIR, ensure_memory_files
+from .middleware.memory import GLOBAL_MEMORY_FILE, MEMORY_DIR, REPO_MEMORY_DIR, ensure_memory_files
 
 console = Console()
 
@@ -84,8 +84,9 @@ def analyze(repo_name: str, model: str | None) -> None:
         f"\n[bold green]Harness Agent[/bold green] — analysing "
         f"[cyan]{repo.name}[/cyan]"
     )
-    console.print(f"[dim]Path:   {repo}[/dim]")
-    console.print(f"[dim]Memory: {MEMORY_DIR}[/dim]\n")
+    console.print(f"[dim]Path:     {repo}[/dim]")
+    console.print(f"[dim]Memory:   {GLOBAL_MEMORY_FILE}[/dim]")
+    console.print(f"[dim]Repo mem: {REPO_MEMORY_DIR}/{repo.name}.md[/dim]\n")
 
     llm = create_llm(provider=model)
     app = build_graph(llm=llm, repo_name=repo.name)
@@ -114,7 +115,7 @@ def analyze(repo_name: str, model: str | None) -> None:
         "memory_loaded": False,
         "global_memory": "",
         "repo_memory": "",
-        "auto_approved_tools": set(),
+        "writes_approved": False,
     }
 
     _run_agent_loop(app, state, config, repo_name=repo.name)
